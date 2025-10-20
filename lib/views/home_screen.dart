@@ -158,6 +158,13 @@ class _HomeScreenState extends State<HomeScreen> {
           .collection('bills')
           .add(billData);
 
+      // 🗑️ 2️⃣ Clear cart after successful bill creation
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in cartSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
       // 3. ✅ Show Bill in Dialog
       showDialog(
         context: context,
@@ -374,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
         iconTheme: IconThemeData(color: AppConstant.appBarWhiteColor),
         backgroundColor: AppConstant.appBarColor,
         title: Text(
-          "Billing App",
+            "BillMate",
           style: TextStyle(color: AppConstant.appBarWhiteColor),
         ),
         actions: [
@@ -415,11 +422,10 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: products.length,
             itemBuilder: (context, index) {
               final product = products[index];
-
               return Card(
                 elevation: 5,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(5),
                 ),
                 shadowColor: Colors.grey.withOpacity(0.3),
                 child: Column(

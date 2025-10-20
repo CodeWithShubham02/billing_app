@@ -1,7 +1,8 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../controllers/increase_product.dart';
 import '../controllers/product_controller.dart';
 import '../models/product_model.dart';
 
@@ -15,26 +16,51 @@ class AddProductScreen extends StatefulWidget {
 class _AddProductScreenState extends State<AddProductScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-
   final ProductController _controller = ProductController();
 
-  String category = 'Sandwich';
   File? _image;
   bool _isLoading = false;
 
-  final List<String> categories = ['Sandwich', 'Sevpuri', 'Panipuri','Burger',
-  'Pizza',
-  'Fries',
-  'Hot Dog',
-  'Taco',
-  'Nuggets',
-  'Wrap',
-  'Pasta',
-  'Dosa',
-  'Idli',
-  'Vada Pav',
-  'Spring Roll'];
+  // 🔹 Category data from Firestore
+  List<Map<String, dynamic>> categories = [];
+  String? selectedCategoryId;
+  String? selectedCategoryName;
 
+  @override
+  void initState() {
+    super.initState();
+    fetchCategories();
+  }
+
+  // 🔹 Fetch categories from Firestore
+  Future<void> fetchCategories() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('category')
+        .orderBy('createdAt', descending: false)
+        .get();
+
+    setState(() {
+      categories = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'categoryId': data['categoryId'] ?? doc.id,
+          'categoryName': data['categoryName'] ?? 'Unnamed',
+        };
+      }).toList();
+
+      if (categories.isNotEmpty) {
+        selectedCategoryId = categories.first['categoryId'];
+        selectedCategoryName = categories.first['categoryName'];
+      }
+    });
+  }
+
+  // 🔹 Pick image from gallery
   Future<void> pickImage() async {
     final pickedFile =
     await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -43,13 +69,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  // 🔹 Save product to Firestore
   Future<void> saveProduct() async {
     final name = _nameController.text.trim();
     final price = double.tryParse(_priceController.text.trim());
 
-    if (name.isEmpty || price == null || _image == null) {
+    if (name.isEmpty ||
+        price == null ||
+        _image == null ||
+        selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields and select an image')),
+        const SnackBar(
+            content:
+            Text('Please fill all fields, select category, and choose image')),
       );
       return;
     }
@@ -67,25 +99,46 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     final product = Product(
       name: name,
-      category: category,
       price: price,
       imageUrl: imageUrl,
       createdAt: DateTime.now(),
+      categoryId: selectedCategoryId ?? '',
+      categoryName: selectedCategoryName ?? '', id: '',
     );
 
-    final success = await _controller.addProduct(product);
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+
+    // 🔹 Store product with categoryId and categoryName
+    final success = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('products')
+        .add({
+      'name': name,
+      'price': price,
+      'imageUrl': imageUrl,
+      'categoryId': selectedCategoryId,
+      'categoryName': selectedCategoryName,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
     setState(() => _isLoading = false);
 
-    if (success) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Product added successfully')));
+    if (success.id.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product added successfully!')),
+      );
       _nameController.clear();
       _priceController.clear();
-      setState(() => _image = null);
+      setState(() {
+        _image = null;
+        selectedCategoryId = categories.isNotEmpty ? categories.first['categoryId'] : null;
+        selectedCategoryName = categories.isNotEmpty ? categories.first['categoryName'] : null;
+      });
     } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Failed to add product')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to add product')),
+      );
     }
   }
 
@@ -102,12 +155,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
               decoration: const InputDecoration(labelText: 'Item Name'),
             ),
             const SizedBox(height: 10),
-            DropdownButtonFormField(
-              value: category,
+            categories.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : DropdownButtonFormField<String>(
+              value: selectedCategoryId,
               items: categories
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .map((c) => DropdownMenuItem<String>(
+                value: c['categoryId'],
+                child: Text(c['categoryName']),
+              ))
                   .toList(),
-              onChanged: (value) => setState(() => category = value.toString()),
+              onChanged: (value) {
+                setState(() {
+                  selectedCategoryId = value;
+                  selectedCategoryName = categories
+                      .firstWhere((c) => c['categoryId'] == value)['categoryName'];
+                });
+              },
               decoration: const InputDecoration(labelText: 'Category'),
             ),
             const SizedBox(height: 10),
@@ -126,12 +190,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 color: Colors.grey[300],
                 child: const Icon(Icons.add_a_photo, size: 50),
               )
-                  : Image.file(_image!, height: 150, width: double.infinity, fit: BoxFit.cover),
+                  : Image.file(
+                _image!,
+                height: 150,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
             ),
             const SizedBox(height: 20),
             _isLoading
                 ? const CircularProgressIndicator()
-                : ElevatedButton(onPressed: saveProduct, child: const Text('Add Product')),
+                : ElevatedButton(
+              onPressed: saveProduct,
+              child: const Text('Add Product'),
+            ),
           ],
         ),
       ),

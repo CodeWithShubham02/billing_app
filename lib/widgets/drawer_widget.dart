@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import '../utills/app_constant.dart';
+import '../views/add_category.dart';
 import '../views/add_item.dart';
 
 class AdminDrawerWidget extends StatefulWidget {
@@ -49,6 +50,15 @@ class _AdminDrawerWidgetState extends State<AdminDrawerWidget> {
               endIndent: 10.0,
               thickness: 1.5,
               color: AppConstant.appTextColor,
+            ),
+            ListTile(
+              onTap: (){
+                Get.to(()=>AddCategoryScreen());
+              },
+              titleAlignment: ListTileTitleAlignment.center,
+              title: Text("Add Category"),
+              leading: Icon(Icons.fastfood_outlined),
+
             ),
             ListTile(
               onTap: (){
